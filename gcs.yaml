@@ -1,0 +1,64 @@
+name: Build and Deploy to GCS
+
+on:
+  push:
+    tags:
+      - '*'
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT }}
+  GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+
+jobs:
+  setup-build-publish-deploy:
+    if: github.event.base_ref == 'refs/heads/develop'
+    name: Setup, Build and Deploy
+    runs-on: ubuntu-18.04
+    steps:
+
+    - name: Checkout code
+      uses: actions/checkout@v2
+    - name: Setup node
+      uses: actions/setup-node@v1
+      with:
+        node-version: 12
+
+    - name: Clear cache
+      run: npm cache clean --force
+
+    - name: Remove node_modules
+      run: rm -rf node_modules
+
+    - name: Remove package-lock.json
+      run: rm package-lock.json
+
+    - name: Install dependencies
+      run: npm install --legacy-peer-deps
+
+    - name: Build the app
+      run: npm run build
+      env:
+        CI: false
+      
+    - name: Setup - gcloud / gsutil
+      uses: google-github-actions/setup-gcloud@master
+      with:
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        project_id: ${{ secrets.GCS_PROJECT }}
+        export_default_credentials: true
+
+    - name: Deploy
+      run: gsutil -m rsync -d -c -r build gs://$GCS_BUCKET
+    # - run: gsutil -m setmeta -h "Cache-Control:public, max-age=3600" gs://$GCS_BUCKET/*.html
+    # - run: gsutil -m setmeta -h "Cache-Control:public, max-age=3600" gs://$GCS_BUCKET/*.json
+    # - run: gsutil -m setmeta -h "Cache-Control:public, max-age=31536000" gs://$GCS_BUCKET/**/js/*.js
+    # - run: gsutil -m setmeta -h "Cache-Control:public, max-age=31536000" gs://$GCS_BUCKET/**/css/*.css
+    # - run: gsutil -m setmeta -h "Cache-Control:public, max-age=31536000" gs://$GCS_BUCKET/**/**/*.svg
+    # - run: gsutil -m setmeta -h "Cache-Control:public, max-age=31536000" gs://$GCS_BUCKET/**/**/*.png
+    # - name: Invalidate cache
+    #   uses: actions-hub/gcloud@master
+    #   if: success()
+    #   env:
+    #     PROJECT_ID: ${{ secrets.GCP_PROJECT }}
+    #     APPLICATION_CREDENTIALS: ${{ secrets.GCP_SA_KEY }}
+    #   with:
+    #     args: "compute url-maps invalidate-cdn-cache admin-lb --path='/*'"
